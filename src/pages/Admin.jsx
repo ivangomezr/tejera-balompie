@@ -199,7 +199,7 @@ function PanelJugadores({ jugadores, store }) {
 // ---- Panel Partidos ----
 function PanelPartidos({ partidos, store }) {
   const [modal, setModal] = useState(null)
-  const emptyP = { jornada: '', fecha: '', hora: '', local: EQUIPO_NOMBRE, visitante: '', campo: 'Campo Municipal', jugado: false, goles_local: 0, goles_visitante: 0, amistoso: false, escudo_rival_url: null }
+  const emptyP = { jornada: '', fecha: '', hora: '', local: EQUIPO_NOMBRE, visitante: '', campo: 'Campo Municipal', jugado: false, goles_local: 0, goles_visitante: 0, amistoso: false, escudo_rival_url: null, penaltis: false, goles_penaltis_local: 0, goles_penaltis_visitante: 0 }
   const [form, setForm] = useState(emptyP)
   const [escudoFile, setEscudoFile] = useState(null)
   const [escudoPreview, setEscudoPreview] = useState(null)
@@ -213,7 +213,7 @@ function PanelPartidos({ partidos, store }) {
 
   const openAdd = () => { setForm(emptyP); setEscudoFile(null); setEscudoPreview(null); setErrorValidacion(null); setModal({ mode: 'add' }) }
   const openEdit = (p) => {
-    setForm({ jornada: p.jornada, fecha: p.fecha, hora: p.hora || '', local: p.local, visitante: p.visitante, campo: p.campo, jugado: p.jugado, goles_local: p.goles_local, goles_visitante: p.goles_visitante, amistoso: p.amistoso || false, escudo_rival_url: p.escudo_rival_url || null })
+    setForm({ jornada: p.jornada, fecha: p.fecha, hora: p.hora || '', local: p.local, visitante: p.visitante, campo: p.campo, jugado: p.jugado, goles_local: p.goles_local, goles_visitante: p.goles_visitante, amistoso: p.amistoso || false, escudo_rival_url: p.escudo_rival_url || null, penaltis: p.penaltis || false, goles_penaltis_local: p.goles_penaltis_local || 0, goles_penaltis_visitante: p.goles_penaltis_visitante || 0 })
     setEscudoFile(null)
     setEscudoPreview(p.escudo_rival_url || null)
     setErrorValidacion(null)
@@ -278,6 +278,9 @@ function PanelPartidos({ partidos, store }) {
       goles_visitante: Number(form.goles_visitante) || 0,
       jugado: esFuturo ? false : (autoJugado ? true : form.jugado),
       escudo_rival_url: escudoUrl,
+      penaltis: form.penaltis || false,
+      goles_penaltis_local: form.penaltis ? (Number(form.goles_penaltis_local) || 0) : 0,
+      goles_penaltis_visitante: form.penaltis ? (Number(form.goles_penaltis_visitante) || 0) : 0,
     }
 
     if (typeof haptics !== 'undefined' && haptics.success) haptics.success()
@@ -501,11 +504,26 @@ function PanelPartidos({ partidos, store }) {
             </div>
           )}
 
-
-          {errorValidacion && (
-            <div style={{ color: '#c0392b', backgroundColor: '#fadbd8', border: '1px solid #f5b7b1', padding: '10px 14px', borderRadius: 8, fontSize: 13, marginBottom: 16, fontWeight: 500, textAlign: 'center' }}>
-              ⚠️ {errorValidacion}
-            </div>
+          {/* Penaltis — solo si jugado y empate */}
+          {(form.jugado || (() => { const fh = form.hora ? `${form.fecha}T${form.hora}:00` : `${form.fecha}T23:59:00`; return form.fecha && new Date(fh) < new Date() })()) &&
+            Number(form.goles_local) === Number(form.goles_visitante) && (
+              <div style={{ background: '#f5e8eb', borderRadius: 12, padding: '12px 14px', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <input type="checkbox" id="penaltis-admin" checked={form.penaltis || false}
+                    onChange={e => set('penaltis', e.target.checked)}
+                    style={{ width: 18, height: 18, accentColor: 'var(--verde)' }} />
+                  <label htmlFor="penaltis-admin" style={{ fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>Decidido en penaltis</label>
+                </div>
+                {form.penaltis && (
+                  <p style={{ fontSize: 12, color: 'var(--gris-mid)', margin: '8px 0 0 28px' }}>
+                    Guarda el partido y edita la tanda desde el detalle del partido.
+                  </p>
+                )}
+              </div>
+            )}
+          <div style={{ color: '#c0392b', backgroundColor: '#fadbd8', border: '1px solid #f5b7b1', padding: '10px 14px', borderRadius: 8, fontSize: 13, marginBottom: 16, fontWeight: 500, textAlign: 'center' }}>
+            ⚠️ {errorValidacion}
+          </div>
           )}
           <button onClick={save} className="btn btn-primary btn-block" style={{ fontSize: 16 }} disabled={subiendoEscudo}>
             {subiendoEscudo ? '⏳ Guardando...' : '⚽ Guardar partido'}

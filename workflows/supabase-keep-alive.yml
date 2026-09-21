@@ -1,0 +1,17 @@
+name: Mantener Supabase Activo
+
+on:
+  schedule:
+    # Se ejecuta cada 4 días a las 12:00 UTC para evitar la pausa de 7 días
+    - cron: '0 12 */4 * *'
+  workflow_dispatch: # Añade un botón en GitHub para poder ejecutarlo a mano
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hacer petición REST a Supabase
+        run: |
+          curl -s -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/" \
+          -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}"

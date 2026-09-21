@@ -48,7 +48,10 @@ function resultadoPartido(partido) {
   const rival = esLocal ? partido.goles_visitante : partido.goles_local
   if (nuestros > rival) return 'victoria'
   if (nuestros < rival) return 'derrota'
-  return 'empate'
+  if (!partido.penaltis) return 'empate'
+  const np = esLocal ? partido.goles_penaltis_local : partido.goles_penaltis_visitante
+  const rp = esLocal ? partido.goles_penaltis_visitante : partido.goles_penaltis_local
+  return np > rp ? 'victoria' : 'derrota'
 }
 
 function getCountdownLabel(fecha, hora, now) {
@@ -138,6 +141,14 @@ export default function Inicio() {
       (p) => p.local === EQUIPO_NOMBRE || p.visitante === EQUIPO_NOMBRE
     )
 
+    // Calcular resultados reales desde partidos (no desde clasificación manual)
+    const jugados = nuestrosPartidos.filter(p => p.jugado && !p.amistoso)
+    const resPartidos = jugados.map(p => resultadoPartido(p))
+    const pgReal = resPartidos.filter(r => r === 'victoria').length
+    const peReal = resPartidos.filter(r => r === 'empate').length
+    const ppReal = resPartidos.filter(r => r === 'derrota').length
+    const pjReal = jugados.length
+
     const ultimos = [...nuestrosPartidos]
       .filter((p) => p.jugado)
       .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
@@ -157,6 +168,7 @@ export default function Inicio() {
       asistente,
       ultimos,
       proximo,
+      pgReal, peReal, ppReal, pjReal,
     }
   }, [jugadores, partidos, stats, clasificacion])
 
@@ -170,7 +182,7 @@ export default function Inicio() {
     )
   }
 
-  const { nuestro, totalGoles, totales, goleador, asistente, ultimos, proximo } = data
+  const { nuestro, totalGoles, totales, goleador, asistente, ultimos, proximo, pgReal, peReal, ppReal, pjReal } = data
   const topGoleadores = [...totales].sort((a, b) => b.goles - a.goles).filter((j) => j.goles > 0).slice(0, 4)
   const maxGoles = Math.max(...totales.map((x) => x.goles || 0), 1)
 
@@ -223,7 +235,7 @@ export default function Inicio() {
           {[
             [`${nuestro?.posCalculada ?? '-'}º`, 'Posición'],
             [`${nuestro?.pts ?? 0}`, 'Puntos'],
-            [`${nuestro?.pg ?? 0}-${nuestro?.pe ?? 0}-${nuestro?.pp ?? 0}`, 'Racha'],
+            [`${pgReal}-${peReal}-${ppReal}`, 'Racha'],
           ].map(([valor, label]) => (
             <div
               key={label}
@@ -325,8 +337,8 @@ export default function Inicio() {
       {/* Métricas */}
       <section className="grid-4 anim-fade-up anim-delay-2" style={{ marginBottom: '1rem' }}>
         {[
-          ['Goles', totalGoles, `${nuestro?.pj ?? 0} jornadas`],
-          ['Victorias', nuestro?.pg ?? 0, `de ${nuestro?.pj ?? 0} jugados`],
+          ['Goles', totalGoles, `${pjReal} jornadas`],
+          ['Victorias', pgReal, `de ${pjReal} jugados`],
           ['Goleador', goleador?.goles ?? 0, goleador?.nombre?.split(' ')[0] || '-'],
           ['Asistente', asistente?.asistencias ?? 0, asistente?.nombre?.split(' ')[0] || '-'],
         ].map(([label, value, sub]) => (
