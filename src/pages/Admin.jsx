@@ -889,9 +889,7 @@ function PanelTemporada({ store }) {
   const [form, setForm] = useState({ nombre: '', año: new Date().getFullYear() + 1 })
   const [cerrando, setCerrando] = useState(false)
   const [confirmando, setConfirmando] = useState(false)
-  const [pwdSuper, setPwdSuper] = useState('')
-  const [showPwdSuper, setShowPwdSuper] = useState(false)
-  const [errorPwd, setErrorPwd] = useState('')
+  const [errorSesion, setErrorSesion] = useState('')
 
   useEffect(() => {
     if (!store.getTemporadas) return
@@ -902,10 +900,12 @@ function PanelTemporada({ store }) {
   }, [])
 
   const verificarYCerrar = async () => {
-    // Si es superadmin por contraseña, no necesita verificar de nuevo
-    if (!adminAuth.isSuperAdmin()) {
-      const superPwd = import.meta.env.VITE_SUPERADMIN_PASSWORD
-      if (!superPwd || pwdSuper !== superPwd) { setErrorPwd('Contraseña incorrecta'); return }
+    // Antes de una acción irreversible, el rol se confirma con el servidor
+    setErrorSesion('')
+    const estado = await adminAuth.verificarSesion()
+    if (estado !== 'valida' || !adminAuth.isSuperAdmin()) {
+      setErrorSesion('No se ha podido confirmar tu sesión de superadmin. Vuelve a entrar e inténtalo de nuevo.')
+      return
     }
     if (!form.nombre.trim()) { alert('Pon nombre a la nueva temporada'); return }
     setCerrando(true)
@@ -913,7 +913,7 @@ function PanelTemporada({ store }) {
     const ts = await store.getTemporadas()
     setTemporadas(ts)
     setTemporadaActiva(ts.find(t => t.activa) || null)
-    setShowForm(false); setConfirmando(false); setPwdSuper(''); setErrorPwd(''); setCerrando(false)
+    setShowForm(false); setConfirmando(false); setCerrando(false)
   }
 
   return (
@@ -956,25 +956,10 @@ function PanelTemporada({ store }) {
               <div style={{ background: '#fde8e8', border: '1px solid #f5c0c0', borderRadius: 10, padding: '12px 14px', marginBottom: 14, fontSize: 13, color: '#c0392b' }}>
                 ⚠️ <strong>Atención:</strong> Al cerrar <strong>"{temporadaActiva?.nombre}"</strong>, los partidos, estadísticas y clasificación quedarán archivados. Los jugadores se mantienen. Esta acción no se puede deshacer.
               </div>
-              {!adminAuth.isSuperAdmin() && (
-                <div className="form-group">
-                  <label className="label">🔐 Contraseña de superadmin</label>
-                  <div style={{ position: 'relative' }}>
-                    <input className="input" type={showPwdSuper ? 'text' : 'password'}
-                      placeholder="Solo el creador de la app puede hacer esto"
-                      value={pwdSuper} onChange={e => { setPwdSuper(e.target.value); setErrorPwd('') }}
-                      style={{ paddingRight: 48 }} />
-                    <button type="button" onClick={() => setShowPwdSuper(v => !v)}
-                      style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: 'var(--gris-mid)' }}>
-                      {showPwdSuper ? '🙈' : '👁️'}
-                    </button>
-                  </div>
-                  {errorPwd && <div style={{ color: '#c0392b', fontSize: 12, marginTop: 4 }}>⚠️ {errorPwd}</div>}
-                </div>
-              )}
+              {errorSesion && <div style={{ color: '#c0392b', fontSize: 12, marginBottom: 12 }}>⚠️ {errorSesion}</div>}
               <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => { setConfirmando(false); setPwdSuper(''); setErrorPwd('') }} className="btn btn-ghost" style={{ flex: 1 }}>Atrás</button>
-                <button onClick={verificarYCerrar} disabled={cerrando || !pwdSuper} style={{ flex: 1, background: '#c0392b', color: 'white', border: 'none', borderRadius: 10, padding: '12px', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: (cerrando || !pwdSuper) ? 0.5 : 1 }}>
+                <button onClick={() => { setConfirmando(false); setErrorSesion('') }} className="btn btn-ghost" style={{ flex: 1 }}>Atrás</button>
+                <button onClick={verificarYCerrar} disabled={cerrando} style={{ flex: 1, background: '#c0392b', color: 'white', border: 'none', borderRadius: 10, padding: '12px', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: cerrando ? 0.5 : 1 }}>
                   {cerrando ? 'Cerrando...' : '🔚 Confirmar y cerrar'}
                 </button>
               </div>
@@ -1003,10 +988,6 @@ function PanelTemporada({ store }) {
 // ---- Panel Log ----
 function PanelLog({ store, jugadores }) {
   const esSuperAdmin = adminAuth.isSuperAdmin()
-  const [desbloqueado, setDesbloqueado] = useState(esSuperAdmin)
-  const [pwdInput, setPwdInput] = useState('')
-  const [errorPwd, setErrorPwd] = useState('')
-  const [showPwd, setShowPwd] = useState(false)
   const [logs, setLogs] = useState([])
   const [cargando, setCargando] = useState(false)
   const [filtroJugador, setFiltroJugador] = useState('')
@@ -1021,27 +1002,7 @@ function PanelLog({ store, jugadores }) {
     }
   }, [])
 
-  const verificar = async () => {
-    // Hashear lo que escribió y comparar con el hash de superadmin
-    const msgUint8 = new TextEncoder().encode(pwdInput)
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8)
-    const hashArray = Array.from(new Uint8Array(hashBuffer))
-    const hashCalculado = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
-
-    // Importar el hash de superadmin desde adminAuth
-    const { SUPERADMIN_HASH } = await import('../lib/adminAuth')
-    if (hashCalculado !== SUPERADMIN_HASH) {
-      setErrorPwd('Contraseña incorrecta')
-      return
-    }
-    setDesbloqueado(true)
-    setCargando(true)
-    store.getLog()
-      .then(data => { setLogs(data || []); setCargando(false) })
-      .catch(() => setCargando(false))
-  }
-
-  if (!desbloqueado) return (
+  if (!esSuperAdmin) return (
     <div className="card" style={{ textAlign: 'center' }}>
       <div style={{ fontSize: 40, marginBottom: 12 }}>🔐</div>
       <div style={{ fontFamily: 'Bebas Neue', fontSize: 22, color: 'var(--verde)', marginBottom: 6 }}>Área restringida</div>

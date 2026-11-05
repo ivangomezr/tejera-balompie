@@ -3,3 +3,12 @@ dist
 .env
 .env.local
 .DS_Store
+
+# Variables de entorno (nunca al repo)
+.env.*
+!.env.example
+
+# Supabase: archivos locales del CLI y del editor SQL
+supabase/snippets/
+supabase/.temp/
+supabase/.branches/
