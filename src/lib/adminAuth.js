@@ -1,64 +1,103 @@
-const ADMIN_PASSWORD_HASH = '78b9e82b4fb74f04ec4cafda5182252772dc812e3636f4b0d1b3734cf032f51b'
-const SUPERADMIN_PASSWORD_HASH = '8140cec174cceb964caada08c03f6f66b25fd385b200dcb0265b3bd70b02dd4d'
+import { supabase } from './supabase'
 
 const KEY_AUTH = 'tj_admin_auth'
 const KEY_JUGADOR = 'tj_jugador_activo'
 
-async function hashPassword(password) {
-  const msgUint8 = new TextEncoder().encode(password)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
+// Lo guardado aquí solo decide qué muestra la interfaz. Quien valida contraseñas,
+// roles y caducidad es el servidor (ver supabase/migrations/*_auth_servidor.sql).
+function leerSesion() {
+  try {
+    const raw = localStorage.getItem(KEY_AUTH)
+    if (!raw) return null
+    const sesion = JSON.parse(raw)
+    if (!sesion.token || !sesion.rol || !(new Date(sesion.expira_en).getTime() > Date.now())) {
+      limpiarSesion()
+      return null
+    }
+    return sesion
+  } catch { return null }
 }
 
+function limpiarSesion() {
+  try {
+    localStorage.removeItem(KEY_AUTH)
+    localStorage.removeItem(KEY_JUGADOR)
+  } catch { }
+}
+
+// Las versiones anteriores guardaban aquí la fila completa del jugador, con su hash.
+try {
+  const guardado = JSON.parse(localStorage.getItem(KEY_JUGADOR))
+  if (guardado?.clave_hash) {
+    delete guardado.clave_hash
+    localStorage.setItem(KEY_JUGADOR, JSON.stringify(guardado))
+  }
+} catch { }
+
 export const adminAuth = {
-  login: async (password) => {
-    const hashCalculado = await hashPassword(password)
-    if (hashCalculado === SUPERADMIN_PASSWORD_HASH) {
-      const token = { hash: hashCalculado.slice(0, 16), superadmin: true, ts: Date.now() }
-      try { localStorage.setItem(KEY_AUTH, JSON.stringify(token)) } catch { }
-      return true
-    }
-    return false
-  },
-
-  loginAsPlayer: () => {
-    const token = { hash: ADMIN_PASSWORD_HASH.slice(0, 16), superadmin: false, ts: Date.now() }
-    try { localStorage.setItem(KEY_AUTH, JSON.stringify(token)) } catch { }
-  },
-
-  isLogged: () => {
+  // Valida la contraseña (de jugador, admin o superadmin) en el servidor.
+  login: async (jugadorId, clave) => {
     try {
-      const raw = localStorage.getItem(KEY_AUTH)
-      if (!raw) return false
-      const token = JSON.parse(raw)
-      if (!token.hash || !token.ts) return false
-      if (Date.now() - token.ts > 8 * 60 * 60 * 1000) {
-        localStorage.removeItem(KEY_AUTH)
-        return false
+      const { data, error } = await supabase.rpc('iniciar_sesion', {
+        p_jugador_id: jugadorId,
+        p_clave: clave,
+      })
+      if (error || !data) {
+        console.error('Error iniciando sesión:', error)
+        return { ok: false, errorConexion: true }
       }
-      return (
-        token.hash === ADMIN_PASSWORD_HASH.slice(0, 16) ||
-        token.hash === SUPERADMIN_PASSWORD_HASH.slice(0, 16)
-      )
-    } catch { return false }
+      if (!data.ok) {
+        return {
+          ok: false,
+          bloqueado: data.bloqueado === true,
+          fallos: data.fallos ?? null,
+          maxFallos: data.max_fallos,
+          reintentarEn: data.reintentar_en ?? null,
+        }
+      }
+      localStorage.setItem(KEY_AUTH, JSON.stringify({
+        token: data.token,
+        rol: data.rol,
+        expira_en: data.expira_en,
+      }))
+      return { ok: true, rol: data.rol }
+    } catch (err) {
+      console.error('Error iniciando sesión:', err)
+      return { ok: false, errorConexion: true }
+    }
   },
 
-  isSuperAdmin: () => {
+  // Comprueba la sesión contra el servidor y actualiza el rol guardado.
+  // Devuelve 'valida', 'invalida' o 'desconocido' (sin conexión: la PWA sigue funcionando).
+  verificarSesion: async () => {
+    const sesion = leerSesion()
+    if (!sesion) return 'invalida'
     try {
-      const raw = localStorage.getItem(KEY_AUTH)
-      if (!raw) return false
-      const token = JSON.parse(raw)
-      if (!token.ts || Date.now() - token.ts > 8 * 60 * 60 * 1000) return false
-      return token.superadmin === true && token.hash === SUPERADMIN_PASSWORD_HASH.slice(0, 16)
-    } catch { return false }
+      const { data, error } = await supabase.rpc('validar_sesion', { p_token: sesion.token })
+      if (error || !data) return 'desconocido'
+      if (!data.valida) {
+        limpiarSesion()
+        return 'invalida'
+      }
+      localStorage.setItem(KEY_AUTH, JSON.stringify({
+        token: sesion.token,
+        rol: data.rol,
+        expira_en: data.expira_en,
+      }))
+      return 'valida'
+    } catch { return 'desconocido' }
   },
+
+  isLogged: () => leerSesion() !== null,
+
+  isSuperAdmin: () => leerSesion()?.rol === 'superadmin',
 
   logout: () => {
-    try {
-      localStorage.removeItem(KEY_AUTH)
-      localStorage.removeItem(KEY_JUGADOR)
-    } catch { }
+    const sesion = leerSesion()
+    limpiarSesion()
+    if (sesion) {
+      Promise.resolve(supabase.rpc('cerrar_sesion', { p_token: sesion.token })).catch(() => { })
+    }
   },
 
   getJugador: () => {
@@ -72,5 +111,3 @@ export const adminAuth = {
     try { localStorage.setItem(KEY_JUGADOR, JSON.stringify(jugador)) } catch { }
   }
 }
-
-export const SUPERADMIN_HASH = SUPERADMIN_PASSWORD_HASH

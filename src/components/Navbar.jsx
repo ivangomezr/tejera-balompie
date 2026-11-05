@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { adminAuth } from '../lib/adminAuth'
 import { useStore } from '../hooks/useStore'
 import { haptics } from '../lib/haptics'
-import { supabase } from '../lib/supabase'
 
 const tabs = [
   { to: '/', label: 'Inicio', icon: '🏠' },
@@ -37,7 +36,6 @@ export default function Navbar() {
   const [showPwd, setShowPwd] = useState(false)
   const [jugadorSel, setJugadorSel] = useState('')
   const [error, setError] = useState('')
-  const [intentos, setIntentos] = useState(0)
   const [bloqueado, setBloqueado] = useState(false)
 
   // Swipe desde borde izquierdo
@@ -45,10 +43,12 @@ export default function Navbar() {
   const touchStartY = useRef(null)
 
   useEffect(() => {
-    const check = () => {
+    const check = async () => {
+      await adminAuth.verificarSesion()
       setLogged(adminAuth.isLogged())
       setJugadorActivo(adminAuth.getJugador())
     }
+    check()
     window.addEventListener('focus', check)
     return () => window.removeEventListener('focus', check)
   }, [])
@@ -91,48 +91,35 @@ export default function Navbar() {
     if (bloqueado) return
     if (!jugadorSel) { setError('Elige tu nombre'); return }
 
-    // 1. Intentamos login como Admin general (la contraseña larga que ya tenías)
-    const isAdminLogin = await adminAuth.login(pwd)
-    let isValidPlayer = false
+    // El servidor comprueba la contraseña (jugador, admin o superadmin) y cuenta los intentos
+    const resultado = await adminAuth.login(Number(jugadorSel), pwd)
 
-    // 2. Si no es la de admin, comprobamos si es su PIN numérico en Supabase
-    if (!isAdminLogin) {
-      try {
-        const { data: esValido, error: rpcError } = await supabase.rpc('validar_clave', {
-          p_jugador_id: Number(jugadorSel),
-          p_clave: pwd
-        });
-        if (!rpcError && esValido) {
-          isValidPlayer = true
-          adminAuth.loginAsPlayer()
-        }
-      } catch (err) {
-        console.error("Error comprobando el PIN en Supabase:", err)
-      }
+    if (resultado.errorConexion) {
+      setError('No se ha podido comprobar la contraseña. Inténtalo de nuevo.')
+      return
     }
 
-    // 3. Si fallan las dos cosas, bloqueamos
-    if (!isAdminLogin && !isValidPlayer) {
-      const nuevosIntentos = intentos + 1
-      setIntentos(nuevosIntentos)
-      if (nuevosIntentos >= 5) {
+    if (!resultado.ok) {
+      if (resultado.bloqueado) {
+        const segundos = resultado.reintentarEn ?? 5 * 60
         setBloqueado(true)
-        setError('Demasiados intentos. Espera 5 minutos.')
-        setTimeout(() => { setBloqueado(false); setIntentos(0); setError('') }, 5 * 60 * 1000)
+        setError(`Demasiados intentos. Espera ${Math.ceil(segundos / 60)} minutos.`)
+        setTimeout(() => { setBloqueado(false); setError('') }, segundos * 1000)
+      } else if (resultado.fallos) {
+        setError(`Contraseña o PIN incorrecto (${resultado.fallos}/${resultado.maxFallos} intentos)`)
       } else {
-        setError(`Contraseña o PIN incorrecto (${nuevosIntentos}/5 intentos)`)
+        setError('Contraseña o PIN incorrecto')
       }
       return
     }
 
-    // 4. Login exitoso (como admin o como jugador)
+    // Login correcto (como admin o como jugador)
     const jugador = jugadores.find(j => j.id === Number(jugadorSel))
     if (jugador) {
       adminAuth.setJugador(jugador)
       setJugadorActivo(jugador)
     }
 
-    setIntentos(0)
     setLogged(true)
     setShowModal(false)
     navigate('/')
