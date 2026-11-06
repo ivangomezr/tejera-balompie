@@ -12,3 +12,6 @@ dist
 supabase/snippets/
 supabase/.temp/
 supabase/.branches/
+
+# Volcados con datos reales del club
+supabase/seed.sql
