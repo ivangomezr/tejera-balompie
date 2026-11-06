@@ -85,7 +85,8 @@ export async function desuscribirPush() {
   }
 }
 
-export async function enviarNotificacion({ titulo, imagen_url }) {
+// El aviso no lleva título ni imagen: pueden recibirlo dispositivos sin sesión
+export async function enviarNotificacion() {
   try {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
     await fetch(`${supabaseUrl}/functions/v1/send-push`, {
@@ -94,7 +95,7 @@ export async function enviarNotificacion({ titulo, imagen_url }) {
         'Content-Type': 'application/json',
         'x-sesion-token': tokenSesion() || '',
       },
-      body: JSON.stringify({ tipo: 'portada', titulo, imagen_url }),
+      body: JSON.stringify({ tipo: 'portada' }),
     })
   } catch (err) {
     console.error('[push] Error enviando notificación:', err)
