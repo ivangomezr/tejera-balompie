@@ -9,7 +9,7 @@ const tabs = [
   { to: '/clasificacion', label: 'Tabla', icon: '🏆' },
   { to: '/jugadores', label: 'Plantilla', icon: '👕' },
   { to: '/partidos', label: 'Partidos', icon: '⚽' },
-  { to: '/noticias', label: 'Noticias', icon: '📰' },
+  { to: '/noticias', label: 'Noticias', icon: '📰', soloEquipo: true },
 ]
 
 const menuLinks = [
@@ -18,7 +18,7 @@ const menuLinks = [
   { to: '/jugadores', label: 'Plantilla', icon: '👕' },
   { to: '/partidos', label: 'Partidos', icon: '⚽' },
   { to: '/estadisticas', label: 'Estadísticas', icon: '📊' },
-  { to: '/noticias', label: 'Noticias', icon: '📰' },
+  { to: '/noticias', label: 'Noticias', icon: '📰', soloEquipo: true },
   { to: '/patrocinadores', label: 'Patrocinadores', icon: '🤝' },
   { to: '/historial', label: 'Temporadas', icon: '📚' },
 ]
@@ -191,7 +191,7 @@ export default function Navbar() {
 
       {/* ── Bottom nav ── */}
       <nav className="bottom-nav">
-        {tabs.map(t => (
+        {tabs.filter(t => logged || !t.soloEquipo).map(t => (
           <button
             key={t.to}
             className={`bottom-nav-btn ${location.pathname === t.to || (t.to !== '/' && location.pathname.startsWith(t.to)) ? 'active' : ''}`}
@@ -261,7 +261,7 @@ export default function Navbar() {
 
             {/* Links de navegación */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '0.75rem 0' }}>
-              {menuLinks.map(link => {
+              {menuLinks.filter(link => logged || !link.soloEquipo).map(link => {
                 const activo = location.pathname === link.to || (link.to !== '/' && location.pathname.startsWith(link.to))
                 return (
                   <button

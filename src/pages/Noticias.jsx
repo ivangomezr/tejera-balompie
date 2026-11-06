@@ -17,7 +17,23 @@ function fileToBase64(file) {
   })
 }
 
+// La lectura real la bloquea la base de datos; esto evita mostrar una página vacía
 export default function Noticias() {
+  if (!adminAuth.isLogged()) {
+    return (
+      <div className="page anim-fade" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: '1rem' }}>🔒</div>
+        <h1 style={{ fontFamily: 'Bebas Neue', fontSize: 26, color: 'var(--verde)', marginBottom: 8 }}>Solo para jugadores</h1>
+        <p style={{ color: 'var(--gris-mid)', maxWidth: 300 }}>
+          Esta sección es exclusiva del equipo. Si eres jugador, inicia sesión desde «Acceso al equipo» en el menú para verla.
+        </p>
+      </div>
+    )
+  }
+  return <NoticiasEquipo />
+}
+
+function NoticiasEquipo() {
   const { store } = useStore()
   const [noticias, setNoticias] = useState([])
   const [loading, setLoading] = useState(true)
@@ -109,7 +125,7 @@ export default function Noticias() {
       setNoticias(prev => [nueva, ...prev])
 
       // Enviar push a todos los suscriptores
-      await enviarNotificacion({ titulo: titulo.trim(), imagen_url: nueva.imagen_url })
+      await enviarNotificacion()
 
       setTitulo('')
       setArchivo(null)
