@@ -14,7 +14,7 @@ Deno.serve(async (req) => {
 
   try {
     // tipo: 'portada' | 'resultado'
-    const { tipo, titulo, imagen_url, partido_id, rival, resultado } = await req.json()
+    const { tipo, partido_id, rival, resultado } = await req.json()
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -61,10 +61,9 @@ Deno.serve(async (req) => {
       // tipo === 'portada' (default)
       payload = JSON.stringify({
         title: '📰 Nueva portada',
-        body: titulo,
+        body: 'Entra en la app para verla',
         icon: '/escudo.png',
         badge: '/escudo.png',
-        image: imagen_url || undefined,
         url: '/noticias',
       })
     }
