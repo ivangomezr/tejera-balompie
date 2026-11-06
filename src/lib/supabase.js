@@ -22,8 +22,20 @@ const mockClient = {
   }),
 }
 
+export function tokenSesion() {
+  try { return JSON.parse(localStorage.getItem('tj_admin_auth'))?.token || null } catch { return null }
+}
+
+// Las políticas RLS leen esta cabecera para saber quién hace cada petición
+function fetchConSesion(input, init = {}) {
+  const headers = new Headers(init.headers)
+  const token = tokenSesion()
+  if (token) headers.set('x-sesion-token', token)
+  return fetch(input, { ...init, headers })
+}
+
 export const supabase = isMock
   ? mockClient
-  : createClient(supabaseUrl, supabaseKey)
+  : createClient(supabaseUrl, supabaseKey, { global: { fetch: fetchConSesion } })
 
 export const SUPABASE_READY = !isMock
