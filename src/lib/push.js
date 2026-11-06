@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { supabase, tokenSesion } from './supabase'
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || ''
 
@@ -57,14 +57,11 @@ export async function suscribirPush() {
     })
 
     const json = subscription.toJSON()
-    const { error } = await supabase
-      .from('push_subscriptions')
-      .upsert({
-        endpoint: json.endpoint,
-        p256dh: json.keys.p256dh,
-        auth: json.keys.auth,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'endpoint' })
+    const { error } = await supabase.rpc('guardar_suscripcion_push', {
+      p_endpoint: json.endpoint,
+      p_p256dh: json.keys.p256dh,
+      p_auth: json.keys.auth,
+    })
 
     if (error) { console.error('[push] Error guardando suscripción:', error); return false }
     return true
@@ -82,7 +79,7 @@ export async function desuscribirPush() {
     if (!subscription) return
     const endpoint = subscription.endpoint
     await subscription.unsubscribe()
-    await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint)
+    await supabase.rpc('borrar_suscripcion_push', { p_endpoint: endpoint })
   } catch (err) {
     console.error('[push] Error al desuscribir:', err)
   }
@@ -95,7 +92,7 @@ export async function enviarNotificacion({ titulo, imagen_url }) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-push-secret': 'tejera2026push',
+        'x-sesion-token': tokenSesion() || '',
       },
       body: JSON.stringify({ tipo: 'portada', titulo, imagen_url }),
     })
@@ -111,7 +108,7 @@ export async function enviarNotificacionResultado({ partido_id, rival, resultado
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-push-secret': 'tejera2026push',
+        'x-sesion-token': tokenSesion() || '',
       },
       body: JSON.stringify({ tipo: 'resultado', partido_id, rival, resultado }),
     })

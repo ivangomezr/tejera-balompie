@@ -6,35 +6,38 @@ import webpush from 'https://esm.sh/web-push@3.6.7'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-push-secret',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-sesion-token',
 }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
-  // Verificar secreto propio — evita el problema del JWT format de Supabase
-  const secret = req.headers.get('x-push-secret')
-  if (secret !== Deno.env.get('PUSH_SECRET')) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-      status: 401,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    })
-  }
-
   try {
     // tipo: 'portada' | 'resultado'
     const { tipo, titulo, imagen_url, partido_id, rival, resultado } = await req.json()
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    )
+
+    // Solo puede enviar notificaciones quien tenga una sesion valida
+    const token = req.headers.get('x-sesion-token')
+    const { data: sesion } = token
+      ? await supabase.rpc('validar_sesion', { p_token: token })
+      : { data: null }
+    if (!sesion?.valida) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     const VAPID_PUBLIC  = Deno.env.get('VAPID_PUBLIC_KEY')!
     const VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE_KEY')!
     const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') || 'mailto:admin@tejerabalompie.com'
 
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE)
-
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    )
 
     const { data: subs, error } = await supabase.from('push_subscriptions').select('*')
     if (error) throw error
