@@ -88,7 +88,8 @@ function getCountdownLabel(fecha, hora, now) {
 
 export default function Inicio() {
   const nav = useNavigate()
-  const { jugadores = [], partidos = [], stats = [], clasificacion = [] } = useStore()
+  const { jugadores = [], partidos = [], stats = [], clasificacion = [], store } = useStore()
+  const temporadaVista = store?.getTemporadaVisible?.()
   const [ahora, setAhora] = useState(new Date())
 
   useEffect(() => {
@@ -226,7 +227,7 @@ export default function Inicio() {
                 marginTop: 4,
               }}
             >
-              Liga de Verano Villacañas 2026
+              {temporadaVista?.nombre || 'Liga de Verano Villacañas'}
             </div>
           </div>
         </div>

@@ -883,95 +883,150 @@ function PanelClasificacion({ clasificacion, store }) {
 
 // ---- Panel Temporada ----
 function PanelTemporada({ store }) {
-  const [temporadaActiva, setTemporadaActiva] = useState(null)
   const [temporadas, setTemporadas] = useState([])
-  const [showForm, setShowForm] = useState(false)
+  const [cargando, setCargando] = useState(true)
+  const [modo, setModo] = useState(null) // null | 'cerrar' | 'empezar'
   const [form, setForm] = useState({ nombre: '', año: new Date().getFullYear() + 1 })
-  const [cerrando, setCerrando] = useState(false)
-  const [confirmando, setConfirmando] = useState(false)
-  const [errorSesion, setErrorSesion] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState('')
 
-  useEffect(() => {
-    if (!store.getTemporadas) return
-    store.getTemporadas().then(ts => {
-      setTemporadas(ts)
-      setTemporadaActiva(ts.find(t => t.activa) || null)
-    }).catch(() => { })
-  }, [])
+  const cargar = async () => {
+    const ts = await store.getTemporadas().catch(() => [])
+    setTemporadas(ts)
+    setCargando(false)
+  }
+  useEffect(() => { cargar() }, [])
 
-  const verificarYCerrar = async () => {
-    // Antes de una acción irreversible, el rol se confirma con el servidor
-    setErrorSesion('')
+  // La que muestra la app: la temporada en curso o, si no hay, la última jugada
+  const enCurso = temporadas.find(t => t.activa) || null
+  const visible = enCurso || [...temporadas].sort((a, b) => (b.año - a.año) || (b.id - a.id))[0] || null
+  const anteriores = temporadas.filter(t => !t.activa && t.id !== visible?.id)
+
+  const cancelar = () => { setModo(null); setError('') }
+
+  // Antes de tocar las temporadas, el rol se confirma con el servidor
+  const confirmarSuperadmin = async () => {
     const estado = await adminAuth.verificarSesion()
     if (estado !== 'valida' || !adminAuth.isSuperAdmin()) {
-      setErrorSesion('No se ha podido confirmar tu sesión de superadmin. Vuelve a entrar e inténtalo de nuevo.')
-      return
+      setError('No se ha podido confirmar tu sesión de superadmin. Vuelve a entrar e inténtalo de nuevo.')
+      return false
     }
-    if (!form.nombre.trim()) { alert('Pon nombre a la nueva temporada'); return }
-    setCerrando(true)
-    await store.cerrarTemporadaYCrearNueva(form.nombre.trim(), Number(form.año))
-    const ts = await store.getTemporadas()
-    setTemporadas(ts)
-    setTemporadaActiva(ts.find(t => t.activa) || null)
-    setShowForm(false); setConfirmando(false); setCerrando(false)
+    return true
   }
+
+  const cerrar = async () => {
+    setError('')
+    if (!(await confirmarSuperadmin())) return
+    setGuardando(true)
+    try {
+      await store.cerrarTemporada()
+      await cargar()
+      setModo(null)
+    } catch (e) {
+      console.error(e)
+      setError('No se ha podido cerrar la temporada. Recarga la página y comprueba su estado antes de reintentarlo.')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const empezar = async () => {
+    setError('')
+    if (!form.nombre.trim()) { setError('Pon nombre a la nueva temporada'); return }
+    if (!(await confirmarSuperadmin())) return
+    setGuardando(true)
+    try {
+      await store.empezarTemporada(form.nombre.trim(), Number(form.año))
+      await cargar()
+      setModo(null)
+      setForm({ nombre: '', año: new Date().getFullYear() + 1 })
+    } catch (e) {
+      console.error(e)
+      setError('No se ha podido empezar la temporada. Comprueba que no haya otra en curso.')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const botonPeligro = { flex: 1, background: '#c0392b', color: 'white', border: 'none', borderRadius: 10, padding: '12px', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: guardando ? 0.5 : 1 }
 
   return (
     <div>
       <div className="card" style={{ marginBottom: '1rem', background: 'linear-gradient(135deg,#0d0a0b,#3d1020)' }}>
-        <div style={{ fontSize: 11, color: '#e8a0b0', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Temporada activa</div>
-        <div style={{ fontFamily: 'Bebas Neue', fontSize: 24, color: 'white', lineHeight: 1 }}>{temporadaActiva?.nombre || 'Cargando...'}</div>
-        <div style={{ fontSize: 12, color: '#6a3a42', marginTop: 4 }}>Año {temporadaActiva?.año} · Todos los datos actuales pertenecen a esta temporada</div>
+        <div style={{ fontSize: 11, color: '#e8a0b0', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>
+          {cargando ? 'Temporada' : enCurso ? 'Temporada en curso' : 'Temporada finalizada'}
+        </div>
+        <div style={{ fontFamily: 'Bebas Neue', fontSize: 24, color: 'white', lineHeight: 1 }}>
+          {cargando ? 'Cargando...' : visible?.nombre || 'Sin temporadas'}
+        </div>
+        {!cargando && visible && (
+          <div style={{ fontSize: 12, color: '#6a3a42', marginTop: 4 }}>
+            Año {visible.año} · {enCurso
+              ? 'Todos los datos actuales pertenecen a esta temporada'
+              : 'La app sigue mostrando sus datos hasta que empiece la siguiente. Los partidos nuevos se añaden a esta temporada.'}
+          </div>
+        )}
       </div>
 
       {!adminAuth.isSuperAdmin() ? (
         <div style={{ background: '#f7f2f3', borderRadius: 12, padding: '1rem', marginBottom: '1.5rem', textAlign: 'center' }}>
           <div style={{ fontSize: 20, marginBottom: 6 }}>🔐</div>
-          <div style={{ fontSize: 13, color: 'var(--gris-mid)' }}>Solo el superadmin puede cerrar la temporada</div>
+          <div style={{ fontSize: 13, color: 'var(--gris-mid)' }}>Solo el superadmin puede cerrar o empezar temporadas</div>
         </div>
-      ) : !showForm ? (
-        <button onClick={() => setShowForm(true)} className="btn btn-ghost btn-block" style={{ marginBottom: '1.5rem' }}>
-          🔚 Cerrar temporada y empezar nueva
-        </button>
+      ) : cargando ? null : modo === null ? (
+        enCurso ? (
+          <button onClick={() => setModo('cerrar')} className="btn btn-ghost btn-block" style={{ marginBottom: '1.5rem' }}>
+            🔚 Cerrar temporada
+          </button>
+        ) : (
+          <button onClick={() => setModo('empezar')} className="btn btn-primary btn-block" style={{ marginBottom: '1.5rem' }}>
+            🏁 Empezar nueva temporada
+          </button>
+        )
+      ) : modo === 'cerrar' ? (
+        <div className="card" style={{ marginBottom: '1.5rem', border: '2px solid var(--verde)' }}>
+          <h2 style={{ fontSize: 18, color: 'var(--verde)', marginBottom: 14 }}>Cerrar temporada</h2>
+          <div style={{ background: '#fde8e8', border: '1px solid #f5c0c0', borderRadius: 10, padding: '12px 14px', marginBottom: 14, fontSize: 13, color: '#c0392b' }}>
+            ⚠️ <strong>"{enCurso?.nombre}"</strong> quedará finalizada. Sus partidos, estadísticas y clasificación se seguirán viendo en la app hasta que empieces la siguiente temporada, y se podrán seguir añadiendo partidos (por ejemplo, amistosos).
+          </div>
+          {error && <div style={{ color: '#c0392b', fontSize: 12, marginBottom: 12 }}>⚠️ {error}</div>}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={cancelar} className="btn btn-ghost" style={{ flex: 1 }}>Cancelar</button>
+            <button onClick={cerrar} disabled={guardando} style={botonPeligro}>
+              {guardando ? 'Cerrando...' : '🔚 Confirmar cierre'}
+            </button>
+          </div>
+        </div>
       ) : (
         <div className="card" style={{ marginBottom: '1.5rem', border: '2px solid var(--verde)' }}>
           <h2 style={{ fontSize: 18, color: 'var(--verde)', marginBottom: 14 }}>Nueva temporada</h2>
-          {!confirmando ? (
-            <>
-              <div className="form-group">
-                <label className="label">Nombre de la nueva temporada</label>
-                <input className="input" value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Ej: Liga Verano Villacañas 2027" />
-              </div>
-              <div className="form-group">
-                <label className="label">Año</label>
-                <input className="input" type="number" value={form.año} onChange={e => setForm(f => ({ ...f, año: e.target.value }))} />
-              </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => setShowForm(false)} className="btn btn-ghost" style={{ flex: 1 }}>Cancelar</button>
-                <button onClick={() => setConfirmando(true)} className="btn btn-primary" style={{ flex: 1 }}>Continuar →</button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ background: '#fde8e8', border: '1px solid #f5c0c0', borderRadius: 10, padding: '12px 14px', marginBottom: 14, fontSize: 13, color: '#c0392b' }}>
-                ⚠️ <strong>Atención:</strong> Al cerrar <strong>"{temporadaActiva?.nombre}"</strong>, los partidos, estadísticas y clasificación quedarán archivados. Los jugadores se mantienen. Esta acción no se puede deshacer.
-              </div>
-              {errorSesion && <div style={{ color: '#c0392b', fontSize: 12, marginBottom: 12 }}>⚠️ {errorSesion}</div>}
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => { setConfirmando(false); setErrorSesion('') }} className="btn btn-ghost" style={{ flex: 1 }}>Atrás</button>
-                <button onClick={verificarYCerrar} disabled={cerrando} style={{ flex: 1, background: '#c0392b', color: 'white', border: 'none', borderRadius: 10, padding: '12px', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: cerrando ? 0.5 : 1 }}>
-                  {cerrando ? 'Cerrando...' : '🔚 Confirmar y cerrar'}
-                </button>
-              </div>
-            </>
+          <div className="form-group">
+            <label className="label">Nombre de la nueva temporada</label>
+            <input className="input" value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Ej: Liga Verano Villacañas 2027" />
+          </div>
+          <div className="form-group">
+            <label className="label">Año</label>
+            <input className="input" type="number" value={form.año} onChange={e => setForm(f => ({ ...f, año: e.target.value }))} />
+          </div>
+          {visible && (
+            <div style={{ background: '#fff8e6', border: '1px solid #f0c040', borderRadius: 10, padding: '12px 14px', marginBottom: 14, fontSize: 13, color: '#856a00' }}>
+              ⚠️ Los partidos, estadísticas y clasificación de <strong>"{visible.nombre}"</strong> dejarán de verse en la app y pasarán a <strong>Temporadas</strong>. La nueva empieza vacía; los jugadores se mantienen.
+            </div>
           )}
+          {error && <div style={{ color: '#c0392b', fontSize: 12, marginBottom: 12 }}>⚠️ {error}</div>}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={cancelar} className="btn btn-ghost" style={{ flex: 1 }}>Cancelar</button>
+            <button onClick={empezar} disabled={guardando} className="btn btn-primary" style={{ flex: 1, opacity: guardando ? 0.5 : 1 }}>
+              {guardando ? 'Creando...' : '🏁 Empezar temporada'}
+            </button>
+          </div>
         </div>
       )}
 
       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gris-mid)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Temporadas anteriores</div>
-      {temporadas.filter(t => !t.activa).length === 0 && <div className="empty" style={{ padding: '1.5rem' }}>Esta es la primera temporada</div>}
+      {!cargando && anteriores.length === 0 && <div className="empty" style={{ padding: '1.5rem' }}>No hay temporadas anteriores</div>}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        {temporadas.filter(t => !t.activa).map((t, i, arr) => (
+        {anteriores.map((t, i, arr) => (
           <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderBottom: i < arr.length - 1 ? '1px solid #f5e8eb' : 'none' }}>
             <div style={{ fontSize: 24 }}>🏆</div>
             <div style={{ flex: 1 }}>
@@ -1211,7 +1266,7 @@ export default function Admin() {
           <div style={{ background: 'var(--verde)', borderRadius: 10, width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>⚙️</div>
           <div style={{ flex: 1 }}>
             <h1 style={{ fontFamily: 'Bebas Neue', fontSize: 26, color: 'var(--verde)', lineHeight: 1 }}>Panel de gestión</h1>
-            <div style={{ fontSize: 12, color: 'var(--gris-mid)' }}>Tejera Balompié · Liga Verano 2026</div>
+            <div style={{ fontSize: 12, color: 'var(--gris-mid)' }}>Tejera Balompié · {store.getTemporadaVisible()?.nombre || 'Sin temporada'}</div>
           </div>
           <button
             onClick={handleLogout}

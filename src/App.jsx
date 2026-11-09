@@ -68,7 +68,7 @@ function SplashScreen({ onDone }) {
           Tejera Balompié
         </div>
         <div style={{ fontSize: 10, color: '#6a3a42', letterSpacing: '0.16em', marginTop: 6, textTransform: 'uppercase' }}>
-          Liga Verano Villacañas 2026
+          Liga Verano Villacañas
         </div>
       </div>
 

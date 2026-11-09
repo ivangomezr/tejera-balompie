@@ -26,7 +26,13 @@ const menuLinks = [
 export default function Navbar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { jugadores } = useStore()
+  const { jugadores, store } = useStore()
+
+  // Temporada que muestran Inicio, Tabla, Plantilla, Partidos y Estadísticas
+  const temporadas = store.getTemporadasLista()
+  const temporadaVista = store.getTemporadaVisible()
+  const viendoAnterior = !store.esTemporadaPorDefecto()
+  const nombreTemporada = (temporadaVista?.nombre || 'Tejera Balompié').toUpperCase()
 
   const [logged, setLogged] = useState(adminAuth.isLogged())
   const [jugadorActivo, setJugadorActivo] = useState(adminAuth.getJugador())
@@ -163,13 +169,44 @@ export default function Navbar() {
           />
 
           {/* Título */}
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontFamily: 'Bebas Neue', fontSize: 17, color: '#e8a0b0', letterSpacing: '0.06em', lineHeight: 1.1 }}>
               Tejera Balompié
             </div>
-            <div style={{ fontSize: 10, color: '#6a3a42', letterSpacing: '0.07em' }}>
-              LIGA VERANO VILLACAÑAS 2026
-            </div>
+            {temporadas.length > 1 ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 3, minWidth: 0, cursor: 'pointer' }}>
+                  <span style={{ fontSize: 10, letterSpacing: '0.07em', color: viendoAnterior ? '#e8a0b0' : '#6a3a42', fontWeight: viendoAnterior ? 700 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {nombreTemporada}
+                  </span>
+                  <span aria-hidden="true" style={{ fontSize: 9, color: viendoAnterior ? '#e8a0b0' : '#6a3a42' }}>▾</span>
+                  <select
+                    aria-label="Temporada que se muestra"
+                    value={temporadaVista?.id ?? ''}
+                    onChange={e => store.seleccionarTemporada(Number(e.target.value))}
+                    style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%' }}
+                  >
+                    {temporadas.map(t => (
+                      <option key={t.id} value={t.id}>{t.nombre}{t.activa ? ' (en curso)' : ''}</option>
+                    ))}
+                  </select>
+                </label>
+                {viendoAnterior && (
+                  <button
+                    onClick={() => store.seleccionarTemporada(temporadas[0].id)}
+                    style={{ fontSize: 9, letterSpacing: '0.05em', background: 'rgba(232,160,176,0.15)', color: '#e8a0b0', border: 'none', borderRadius: 10, padding: '2px 7px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    title="Volver a la temporada actual"
+                    aria-label="Volver a la temporada actual"
+                  >
+                    ↩
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div style={{ fontSize: 10, color: '#6a3a42', letterSpacing: '0.07em' }}>
+                {nombreTemporada}
+              </div>
+            )}
           </div>
 
           {/* Jugador activo (solo si logged) */}
@@ -242,7 +279,7 @@ export default function Navbar() {
                     Tejera Balompié
                   </div>
                   <div style={{ fontSize: 9, color: '#6a3a42', letterSpacing: '0.07em' }}>
-                    LIGA VERANO VILLACAÑAS 2026
+                    {nombreTemporada}
                   </div>
                 </div>
                 <button
