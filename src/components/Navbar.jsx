@@ -9,7 +9,7 @@ const tabs = [
   { to: '/clasificacion', label: 'Tabla', icon: '🏆' },
   { to: '/jugadores', label: 'Plantilla', icon: '👕' },
   { to: '/partidos', label: 'Partidos', icon: '⚽' },
-  { to: '/noticias', label: 'Noticias', icon: '📰', soloEquipo: true },
+  { to: '/noticias', label: 'Noticias', icon: '📰' },
 ]
 
 const menuLinks = [
@@ -18,7 +18,7 @@ const menuLinks = [
   { to: '/jugadores', label: 'Plantilla', icon: '👕' },
   { to: '/partidos', label: 'Partidos', icon: '⚽' },
   { to: '/estadisticas', label: 'Estadísticas', icon: '📊' },
-  { to: '/noticias', label: 'Noticias', icon: '📰', soloEquipo: true },
+  { to: '/noticias', label: 'Noticias', icon: '📰' },
   { to: '/patrocinadores', label: 'Patrocinadores', icon: '🤝' },
   { to: '/historial', label: 'Temporadas', icon: '📚' },
 ]
@@ -53,6 +53,14 @@ export default function Navbar() {
     return () => window.removeEventListener('focus', check)
   }, [])
 
+  // Otras páginas (como Noticias) pueden abrir el acceso; al entrar, se queda en esa página
+  const quedarseTrasLogin = useRef(false)
+  useEffect(() => {
+    const abrir = () => { openModal(); quedarseTrasLogin.current = true }
+    window.addEventListener('tj:abrir-login', abrir)
+    return () => window.removeEventListener('tj:abrir-login', abrir)
+  }, [])
+
   // Cerrar menú al cambiar de página
   useEffect(() => { setShowMenu(false) }, [location.pathname])
 
@@ -81,6 +89,7 @@ export default function Navbar() {
   }, [showMenu])
 
   const openModal = () => {
+    quedarseTrasLogin.current = false
     setPwd(''); setJugadorSel(''); setError(''); setShowPwd(false)
     setShowMenu(false)
     setShowModal(true)
@@ -122,7 +131,8 @@ export default function Navbar() {
 
     setLogged(true)
     setShowModal(false)
-    navigate('/')
+    window.dispatchEvent(new Event('tj:sesion'))
+    if (!quedarseTrasLogin.current) navigate('/')
   }
 
   const handleLogout = () => {
@@ -130,6 +140,7 @@ export default function Navbar() {
     setLogged(false)
     setJugadorActivo(null)
     setShowMenu(false)
+    window.dispatchEvent(new Event('tj:sesion'))
     navigate('/')
   }
 
@@ -191,7 +202,7 @@ export default function Navbar() {
 
       {/* ── Bottom nav ── */}
       <nav className="bottom-nav">
-        {tabs.filter(t => logged || !t.soloEquipo).map(t => (
+        {tabs.map(t => (
           <button
             key={t.to}
             className={`bottom-nav-btn ${location.pathname === t.to || (t.to !== '/' && location.pathname.startsWith(t.to)) ? 'active' : ''}`}
@@ -261,7 +272,7 @@ export default function Navbar() {
 
             {/* Links de navegación */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '0.75rem 0' }}>
-              {menuLinks.filter(link => logged || !link.soloEquipo).map(link => {
+              {menuLinks.map(link => {
                 const activo = location.pathname === link.to || (link.to !== '/' && location.pathname.startsWith(link.to))
                 return (
                   <button

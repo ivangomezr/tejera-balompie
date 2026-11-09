@@ -19,14 +19,29 @@ function fileToBase64(file) {
 
 // La lectura real la bloquea la base de datos; esto evita mostrar una página vacía
 export default function Noticias() {
-  if (!adminAuth.isLogged()) {
+  const [logged, setLogged] = useState(adminAuth.isLogged())
+
+  useEffect(() => {
+    const actualizar = () => setLogged(adminAuth.isLogged())
+    window.addEventListener('tj:sesion', actualizar)
+    window.addEventListener('focus', actualizar)
+    return () => {
+      window.removeEventListener('tj:sesion', actualizar)
+      window.removeEventListener('focus', actualizar)
+    }
+  }, [])
+
+  if (!logged) {
     return (
       <div className="page anim-fade" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', textAlign: 'center' }}>
         <div style={{ fontSize: 48, marginBottom: '1rem' }}>🔒</div>
         <h1 style={{ fontFamily: 'Bebas Neue', fontSize: 26, color: 'var(--verde)', marginBottom: 8 }}>Solo para jugadores</h1>
-        <p style={{ color: 'var(--gris-mid)', maxWidth: 300 }}>
-          Esta sección es exclusiva del equipo. Si eres jugador, inicia sesión desde «Acceso al equipo» en el menú para verla.
+        <p style={{ color: 'var(--gris-mid)', maxWidth: 300, marginBottom: '1.25rem' }}>
+          Esta sección es exclusiva del equipo. Si eres jugador, inicia sesión para ver las portadas.
         </p>
+        <button className="btn btn-primary" onClick={() => window.dispatchEvent(new Event('tj:abrir-login'))}>
+          🔑 Iniciar sesión
+        </button>
       </div>
     )
   }
