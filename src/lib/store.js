@@ -23,7 +23,9 @@ let _jugadores = load('tj_jugadores', jugadoresIniciales)
 let _partidos = load('tj_partidos', partidosIniciales)
 let _stats = load('tj_stats', statsIniciales)
 let _clasificacion = load('tj_clasificacion', clasificacionInicial)
-let _temporadaActiva = null
+// _temporada: la que se está viendo. _temporadaPorDefecto: la en curso o, si no hay, la última jugada
+let _temporada = null
+let _temporadaPorDefecto = null
 let _temporadas = []
 
 let listeners = []
@@ -76,6 +78,19 @@ async function log(accion, entidad, detalle = '') {
   }
 }
 
+// Partidos, estadísticas y clasificación de una temporada (o de todas si no hay ninguna)
+async function cargarDatosTemporada(tid) {
+  const filtro = tid ? { temporada_id: tid } : {}
+  const [partidos, stats, clasificacion] = await Promise.all([
+    sbFetch('partidos', '*', filtro),
+    sbFetch('estadisticas', '*', filtro),
+    sbFetch('clasificacion', '*', filtro),
+  ])
+  _partidos = partidos.map(p => ({ ...p, jugado: p.jugado || false, mvp_jugador_id: p.mvp_jugador_id || null }))
+  _stats = stats.map(s => ({ id: s.id, jugador_id: s.jugador_id, partido_id: s.partido_id, goles: s.goles, asistencias: s.asistencias, tarjetas_amarillas: s.tarjetas_amarillas, tarjetas_rojas: s.tarjetas_rojas, paradas: s.paradas || 0, goles_encajados: s.goles_encajados || 0 }))
+  _clasificacion = clasificacion.sort((a, b) => (a.grupo || '').localeCompare(b.grupo || '') || a.pos - b.pos)
+}
+
 // ---- Store público ----
 export const store = {
   subscribe(fn) {
@@ -111,25 +126,19 @@ export const store = {
   async init() {
     if (!USE_SUPABASE) return
 
-    // Primero cargar temporada activa
-    const { data: tempActiva } = await supabase
-      .from('temporadas').select('*').eq('activa', true).maybeSingle()
-    _temporadaActiva = tempActiva
+    // Todas las temporadas: primero la en curso; si no hay, la última jugada
+    const { data: temporadas } = await supabase.from('temporadas').select('*')
+    _temporadas = (temporadas || []).sort((x, y) =>
+      (Number(y.activa) - Number(x.activa)) || ((y.año || 0) - (x.año || 0)) || (y.id - x.id))
+    _temporadaPorDefecto = _temporadas[0] || null
+    _temporada = _temporadaPorDefecto
 
-    const tid = tempActiva?.id
-    const filtro = tid ? { temporada_id: tid } : {}
-
-    const [jugadores, partidos, stats, clasificacion] = await Promise.all([
+    const [jugadores] = await Promise.all([
       sbFetch('jugadores'),  // jugadores son globales, no por temporada
-      sbFetch('partidos', '*', filtro),
-      sbFetch('estadisticas', '*', filtro),
-      sbFetch('clasificacion', '*', filtro),
+      cargarDatosTemporada(_temporada?.id),
     ])
 
     _jugadores = jugadores.map(j => ({ id: j.id, nombre: j.nombre, posicion: j.posicion, dorsal: j.dorsal, foto_url: j.foto_url, estado: j.estado, estado_desc: j.estado_desc || null }))
-    _partidos = partidos.map(p => ({ ...p, jugado: p.jugado || false, mvp_jugador_id: p.mvp_jugador_id || null }))
-    _stats = stats.map(s => ({ id: s.id, jugador_id: s.jugador_id, partido_id: s.partido_id, goles: s.goles, asistencias: s.asistencias, tarjetas_amarillas: s.tarjetas_amarillas, tarjetas_rojas: s.tarjetas_rojas, paradas: s.paradas || 0, goles_encajados: s.goles_encajados || 0 }))
-    _clasificacion = clasificacion.sort((a, b) => (a.grupo || '').localeCompare(b.grupo || '') || a.pos - b.pos)
 
     notify()
   },
@@ -172,7 +181,7 @@ export const store = {
   // =====================
   async addPartido(p) {
     if (USE_SUPABASE) {
-      const { data } = await supabase.from('partidos').insert({ jornada: p.jornada, fecha: p.fecha, hora: p.hora || null, local: p.local, visitante: p.visitante, campo: p.campo, jugado: p.jugado || false, goles_local: p.goles_local || 0, goles_visitante: p.goles_visitante || 0, temporada_id: _temporadaActiva?.id || null, amistoso: p.amistoso || false, escudo_rival_url: p.escudo_rival_url || null }).select().single()
+      const { data } = await supabase.from('partidos').insert({ jornada: p.jornada, fecha: p.fecha, hora: p.hora || null, local: p.local, visitante: p.visitante, campo: p.campo, jugado: p.jugado || false, goles_local: p.goles_local || 0, goles_visitante: p.goles_visitante || 0, temporada_id: _temporada?.id || null, amistoso: p.amistoso || false, escudo_rival_url: p.escudo_rival_url || null }).select().single()
       if (data) { _partidos = [..._partidos, data] }
     } else {
       const id = Math.max(0, ..._partidos.map(x => x.id)) + 1
@@ -183,7 +192,7 @@ export const store = {
     notify()
   },
   async registrarPartidoJugado(partido_id, convocados_ids) {
-    const temporada_id = _temporadaActiva?.id || null
+    const temporada_id = _temporada?.id || null
     for (const jugador_id of convocados_ids) {
       const existe = _stats.find(s => s.jugador_id === jugador_id && s.partido_id === partido_id)
       if (!existe) {
@@ -295,7 +304,7 @@ export const store = {
   // =====================
   async upsertStat(data) {
     if (USE_SUPABASE) {
-      await supabase.from('estadisticas').upsert({ jugador_id: data.jugador_id, partido_id: data.partido_id, goles: data.goles, asistencias: data.asistencias, tarjetas_amarillas: data.tarjetas_amarillas, tarjetas_rojas: data.tarjetas_rojas, paradas: data.paradas || 0, goles_encajados: data.goles_encajados || 0, temporada_id: _temporadaActiva?.id || null }, { onConflict: 'jugador_id,partido_id' })
+      await supabase.from('estadisticas').upsert({ jugador_id: data.jugador_id, partido_id: data.partido_id, goles: data.goles, asistencias: data.asistencias, tarjetas_amarillas: data.tarjetas_amarillas, tarjetas_rojas: data.tarjetas_rojas, paradas: data.paradas || 0, goles_encajados: data.goles_encajados || 0, temporada_id: _temporada?.id || null }, { onConflict: 'jugador_id,partido_id' })
     }
     const existing = _stats.find(s => s.jugador_id === data.jugador_id && s.partido_id === data.partido_id)
     if (existing) {
@@ -331,7 +340,7 @@ export const store = {
     notify()
   },
   async addEquipoClasificacion(data) {
-    const newEntry = { equipo: data.equipo, pos: data.pos || 1, pj: 0, pg: 0, pe: 0, pp: 0, gf: 0, gc: 0, pts: 0, grupo: data.grupo || 'A', temporada_id: _temporadaActiva?.id || null }
+    const newEntry = { equipo: data.equipo, pos: data.pos || 1, pj: 0, pg: 0, pe: 0, pp: 0, gf: 0, gc: 0, pts: 0, grupo: data.grupo || 'A', temporada_id: _temporada?.id || null }
     if (USE_SUPABASE) {
       const { data: row, error } = await supabase.from('clasificacion').insert(newEntry).select().single()
       if (error) throw error
@@ -537,53 +546,73 @@ export const store = {
     return load('tj_temporadas', [{ id: 1, nombre: 'Liga Verano 2026', año: 2026, activa: true }])
   },
 
+  // Temporada que se está viendo (la elegida arriba, o la de por defecto)
+  getTemporadaVisible() {
+    return _temporada
+  },
+
+  getTemporadasLista() {
+    return [..._temporadas]
+  },
+
+  esTemporadaPorDefecto() {
+    return !_temporada || _temporada.id === _temporadaPorDefecto?.id
+  },
+
+  // Cambia la temporada que muestran Inicio, Tabla, Plantilla, Partidos y Estadísticas
+  async seleccionarTemporada(id) {
+    const elegida = _temporadas.find(t => t.id === id)
+    if (!elegida || elegida.id === _temporada?.id) return
+    _temporada = elegida
+    notify()
+    if (USE_SUPABASE) await cargarDatosTemporada(elegida.id)
+    notify()
+  },
+
   getTemporadaActiva() {
-    return _temporadaActiva
+    return _temporada?.activa ? _temporada : null
   },
 
-  async initTemporada() {
+  // Cierra la temporada en curso. Sus datos se siguen viendo hasta empezar la siguiente.
+  async cerrarTemporada() {
     if (USE_SUPABASE) {
-      const { data } = await supabase
-        .from('temporadas')
-        .select('*')
-        .eq('activa', true)
-        .single()
-      _temporadaActiva = data || null
+      const { data, error } = await supabase
+        .from('temporadas').update({ activa: false }).eq('activa', true).select()
+      if (error) throw error
+      if (!data?.length) throw new Error('No se ha cerrado ninguna temporada')
     } else {
-      const temps = load('tj_temporadas', [{ id: 1, nombre: 'Liga Verano 2026', año: 2026, activa: true }])
-      _temporadaActiva = temps.find(t => t.activa) || temps[0] || null
+      save('tj_temporadas', load('tj_temporadas', []).map(t => ({ ...t, activa: false })))
     }
-    return _temporadaActiva
+    _temporadas = _temporadas.map(t => ({ ...t, activa: false }))
+    if (_temporadaPorDefecto) _temporadaPorDefecto = { ..._temporadaPorDefecto, activa: false }
+    if (_temporada) _temporada = { ..._temporada, activa: false }
+    notify()
   },
 
-  async cerrarTemporadaYCrearNueva(nombreNueva, añoNuevo) {
+  // Empieza una temporada nueva. Solo se puede si no hay otra en curso.
+  async empezarTemporada(nombre, año) {
+    let nueva
     if (USE_SUPABASE) {
-      // Cerrar la activa
-      await supabase.from('temporadas').update({ activa: false }).eq('activa', true)
-      // Crear la nueva
-      const { data } = await supabase
-        .from('temporadas')
-        .insert({ nombre: nombreNueva, año: añoNuevo, activa: true })
-        .select().single()
-      _temporadaActiva = data
-
-      // Limpiar caché local — la nueva temporada empieza vacía
-      _partidos = []
-      _stats = []
-      _clasificacion = []
-      notify()
-      return data
+      const { data, error } = await supabase
+        .from('temporadas').insert({ nombre, año, activa: true }).select().single()
+      if (error) throw error
+      nueva = data
     } else {
       const temps = load('tj_temporadas', [])
-      const nuevas = temps.map(t => ({ ...t, activa: false }))
-      const nueva = { id: Date.now(), nombre: nombreNueva, año: añoNuevo, activa: true }
-      save('tj_temporadas', [...nuevas, nueva])
-      _temporadaActiva = nueva
-      _partidos = []; _stats = []; _clasificacion = []
+      if (temps.some(t => t.activa)) throw new Error('Ya hay una temporada en curso')
+      nueva = { id: Date.now(), nombre, año, activa: true }
+      save('tj_temporadas', [...temps, nueva])
       save('tj_partidos', []); save('tj_stats', []); save('tj_clasificacion', [])
-      notify()
-      return nueva
     }
+    _temporadas = [nueva, ..._temporadas]
+    _temporadaPorDefecto = nueva
+    _temporada = nueva
+    // La nueva temporada empieza vacía; la anterior queda en Temporadas
+    _partidos = []
+    _stats = []
+    _clasificacion = []
+    notify()
+    return nueva
   },
 
   async getDatosTemporada(temporada_id) {
